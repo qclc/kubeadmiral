@@ -59,6 +59,10 @@ type VersionedResource interface {
 	FederatedGVK() schema.GroupVersionKind
 }
 
+// VersionManager 用于记录 FederatedObject 的最后同步版本, 以及在此过程中创建/更新的集群对象的版本
+// 为了避免不必要的更新操作
+// VersionManager 以 PropagatedVersion/ClusterPropagatedVersions 的形式将这些信息持久化到 apiserver 中
+
 /*
 VersionManager is used by the Sync controller to record the last synced version
 of a FederatedObject along with the versions of the cluster objects that were
@@ -188,31 +192,40 @@ func (m *VersionManager) Update(
 	selectedClusters []string,
 	versionMap map[string]string,
 ) error {
+	// 将 federatedObject.Spec.Template hash出一个版本号
 	templateVersion, err := resource.TemplateVersion()
 	if err != nil {
 		return errors.Wrap(err, "Failed to determine template version")
 	}
+	// 将 federatedObject.Spec.Override hash出一个版本号
 	overrideVersion, err := resource.OverrideVersion()
 	if err != nil {
 		return errors.Wrap(err, "Failed to determine override version")
 	}
+	// 此处就是获取 federatedObject 的 qualifiedName
 	qualifiedName := m.versionQualifiedName(resource.FederatedName())
 	key := qualifiedName.String()
 
 	m.Lock()
 
+	// 从 VersionManager.versions 中获取缓存中维护的 ClusterPropagatedVersion 或 PropagatedVersion 对象
 	obj, ok := m.versions[key]
 
 	var oldStatus *fedcorev1a1.PropagatedVersionStatus
 	var clusterVersions []fedcorev1a1.ClusterObjectVersion
+
+	// 从obj上获取旧状态
 	if ok {
 		oldStatus = m.adapter.GetStatus(obj)
+		// 如果当前资源hash出template and override的信息与旧的一样，则保留那些已存在的版本信息
+		// 否则，完全以 versionMap 中的信息为准
 		// The existing versions are still valid if the template and override versions match.
 		if oldStatus.TemplateVersion == templateVersion && oldStatus.OverrideVersion == overrideVersion {
 			clusterVersions = oldStatus.ClusterVersions
 		}
 		clusterVersions = updateClusterVersions(clusterVersions, versionMap, selectedClusters)
 	} else {
+		// 如果没有旧版本，直接使用函数传入的最新 versionMap
 		clusterVersions = VersionMapToClusterVersions(versionMap)
 	}
 
@@ -222,6 +235,7 @@ func (m *VersionManager) Update(
 		ClusterVersions: clusterVersions,
 	}
 
+	// 如果新、旧传播版本内容一致，则无需更新，打印一个日志即可
 	if oldStatus != nil && propagatedversion.PropagatedVersionStatusEquivalent(oldStatus, status) {
 		m.Unlock()
 		m.logger.WithValues("version-qualified-name", qualifiedName).
@@ -229,7 +243,9 @@ func (m *VersionManager) Update(
 		return nil
 	}
 
+	// 将最新的 传播版本状态 更新到 ClusterPropagatedVersion 或 PropagatedVersion 对象上
 	if obj == nil {
+		// 创建一个 ClusterPropagatedVersion 或 PropagatedVersion 对象
 		ownerReference := ownerReferenceForFederatedObject(resource)
 		obj = m.adapter.NewVersion(qualifiedName, ownerReference, status)
 		m.versions[key] = obj
@@ -242,6 +258,7 @@ func (m *VersionManager) Update(
 	// Since writeVersion calls the Kube API, the manager should be
 	// unlocked to avoid blocking on calls across the network.
 
+	// 写入到 kube-apiserver 中的动作
 	return m.writeVersion(obj, qualifiedName)
 }
 
@@ -441,6 +458,9 @@ func ownerReferenceForFederatedObject(resource VersionedResource) metav1.OwnerRe
 	}
 }
 
+// 保留此次 待同步集群 中，版本号没有改变的 版本信息
+// 整体以 newVersions 中为主，其中
+// 如果此次 selectedClusters 存在某个 cluster，但是 newVersions 没有相关信息的，则使用该 cluster中的旧版本信息（从oldVersions取）
 func updateClusterVersions(
 	oldVersions []fedcorev1a1.ClusterObjectVersion,
 	newVersions map[string]string,
@@ -448,18 +468,22 @@ func updateClusterVersions(
 ) []fedcorev1a1.ClusterObjectVersion {
 	// Retain versions for selected clusters that were not changed
 	selectedClusterSet := sets.NewString(selectedClusters...)
+	// 如果是 以选中集群，但newVersions中没有相关信息的，则使用 oldVersion 中对应集群的旧版本信息
 	for _, oldVersion := range oldVersions {
 		if !selectedClusterSet.Has(oldVersion.ClusterName) {
 			continue
 		}
+		// 如果是 newVersions 中确实了某个oldVersion中的集群版本状态，则给他补上
 		if _, ok := newVersions[oldVersion.ClusterName]; !ok {
 			newVersions[oldVersion.ClusterName] = oldVersion.Version
 		}
 	}
 
+	// 将map变为了排序好的列表
 	return VersionMapToClusterVersions(newVersions)
 }
 
+// VersionMapToClusterVersions 将 版本号map 变为了按照 clusterName 大小排序的 版本号列表
 func VersionMapToClusterVersions(versionMap map[string]string) []fedcorev1a1.ClusterObjectVersion {
 	clusterVersions := []fedcorev1a1.ClusterObjectVersion{}
 	for clusterName, version := range versionMap {

@@ -61,6 +61,7 @@ type PropagatedVersionStatus struct {
 	TemplateVersion string `json:"templateVersion"`
 	// The observed version of the overrides for this resource.
 	OverrideVersion string `json:"overridesVersion"`
+	// 该资源在每个集群中生成的最新版本
 	// The last versions produced in each cluster for this resource.
 	// +optional
 	ClusterVersions []ClusterObjectVersion `json:"clusterVersions,omitempty"`

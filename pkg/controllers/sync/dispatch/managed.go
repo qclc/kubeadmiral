@@ -94,9 +94,11 @@ type ManagedDispatcher interface {
 type managedDispatcherImpl struct {
 	sync.RWMutex
 
-	dispatcher            *operationDispatcherImpl
-	unmanagedDispatcher   *unmanagedDispatcherImpl
-	fedResource           FederatedResourceForDispatch
+	dispatcher          *operationDispatcherImpl
+	unmanagedDispatcher *unmanagedDispatcherImpl
+	fedResource         FederatedResourceForDispatch
+
+	// versionMap 是 dispatcher 操作过程中维护的临时版本记录
 	versionMap            map[string]string
 	statusMap             status.PropagationStatusMap
 	skipAdoptingResources bool
@@ -442,6 +444,7 @@ func (d *managedDispatcherImpl) VersionMap() map[string]string {
 	return versionMap
 }
 
+// recordVersion 将资源的版本记录到 managedDispatcherImpl.versionMap 中
 func (d *managedDispatcherImpl) recordVersion(clusterName, version string) {
 	d.Lock()
 	defer d.Unlock()

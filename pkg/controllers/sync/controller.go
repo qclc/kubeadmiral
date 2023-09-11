@@ -657,6 +657,7 @@ func (s *SyncController) syncToClusters(
 		return worker.StatusError
 	}
 
+	// 获取 dispatch 过程中的记录的版本信息，即 d.versionMap
 	// Write updated versions to the API.
 	updatedVersionMap := dispatcher.VersionMap()
 	err = fedResource.UpdateVersions(sets.List(selectedClusterNames), updatedVersionMap)
