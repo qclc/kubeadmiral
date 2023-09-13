@@ -211,6 +211,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		createdObj, createErr := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
 			ctxWithTimeout, obj, metav1.CreateOptions{},
 		)
+		// 如果 createErr 不为空，则运行过程中记录下分发到该子集群的版本号
 		if createErr == nil {
 			version := propagatedversion.ObjectVersion(createdObj)
 			d.recordVersion(clusterName, version)
@@ -335,12 +336,14 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return result
 		}
 
+		// 从 fedResource 上提取出旧的version信息
 		version, err := d.fedResource.VersionForCluster(clusterName)
 		if err != nil {
 			result = d.recordOperationError(ctx, fedcorev1a1.VersionRetrievalFailed, clusterName, op, err)
 			return result
 		}
 
+		// 如果子集群的clusterObj不需要更新（fedResource上的版本号 与 clusterObj 上的版本号一致）
 		if !propagatedversion.ObjectNeedsUpdate(obj, clusterObj, version, d.fedResource.TypeConfig()) {
 			// Resource is current, we still record version in dispatcher
 			// so that federated status can be set with cluster resource generation
@@ -360,6 +363,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return result
 		}
 		d.setResourcesUpdated()
+		// 如果子集群的 clusterObj 不需要更新，则获取 更新后对象的 最新version信息，并记录下来
 		version = propagatedversion.ObjectVersion(obj)
 		d.recordVersion(clusterName, version)
 		return result

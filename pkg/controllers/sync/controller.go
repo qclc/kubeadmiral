@@ -660,6 +660,7 @@ func (s *SyncController) syncToClusters(
 	// 获取 dispatch 过程中的记录的版本信息，即 d.versionMap
 	// Write updated versions to the API.
 	updatedVersionMap := dispatcher.VersionMap()
+	// 创建/更新 fedResource 对应的 ClusterPropagatedVersion/PropagatedVersion 对象
 	err = fedResource.UpdateVersions(sets.List(selectedClusterNames), updatedVersionMap)
 	if err != nil {
 		// Versioning of federated resources is an optimization to

@@ -59,10 +59,6 @@ type VersionedResource interface {
 	FederatedGVK() schema.GroupVersionKind
 }
 
-// VersionManager 用于记录 FederatedObject 的最后同步版本, 以及在此过程中创建/更新的集群对象的版本
-// 为了避免不必要的更新操作
-// VersionManager 以 PropagatedVersion/ClusterPropagatedVersions 的形式将这些信息持久化到 apiserver 中
-
 /*
 VersionManager is used by the Sync controller to record the last synced version
 of a FederatedObject along with the versions of the cluster objects that were
@@ -83,6 +79,10 @@ admission plugins or webhooks. Thus we have to store the version returned by the
 create/update request to avoid false-positives when determining if the cluster
 object has diverged from the template in subsequent reconciles.
 */
+
+// VersionManager 用于记录 FederatedObject 最后同步到成员集群的版本,
+// 以 PropagatedVersion/ClusterPropagatedVersions 对象的形式持久化到 Kubernetes 中
+// VersionManager 为 resourceAccessor 中的一个字段，存储所有 FederatedObject 当前分发的版本信息
 type VersionManager struct {
 	sync.RWMutex
 
@@ -93,6 +93,7 @@ type VersionManager struct {
 
 	hasSynced bool
 
+	// key 是 fedResource 的qualifiedName，value 是 ClusterPropagatedVersion / PropagatedVersion 对象
 	versions map[string]runtimeclient.Object
 
 	client fedcorev1a1client.CoreV1alpha1Interface
@@ -185,6 +186,10 @@ func (m *VersionManager) Get(resource VersionedResource) (map[string]string, err
 	return versionMap, nil
 }
 
+// Update 根据传入的信息，在k8s中创建或更新 ClusterPropagatedVersion/PropagatedVersion 对象
+// resource 是federatedObject,
+// selectedClusters 是此次待同步的集群,
+// versionMap 是最新的各集群分发资源版本号
 // Update ensures that the propagated version for the given versioned
 // resource is recorded.
 func (m *VersionManager) Update(
@@ -192,6 +197,7 @@ func (m *VersionManager) Update(
 	selectedClusters []string,
 	versionMap map[string]string,
 ) error {
+	// 0. 获取前置信息
 	// 将 federatedObject.Spec.Template hash出一个版本号
 	templateVersion, err := resource.TemplateVersion()
 	if err != nil {
@@ -208,27 +214,28 @@ func (m *VersionManager) Update(
 
 	m.Lock()
 
-	// 从 VersionManager.versions 中获取缓存中维护的 ClusterPropagatedVersion 或 PropagatedVersion 对象
+	// 1. 构建或更新 obj(ClusterPropagatedVersion/PropagatedVersion) 的字段
+	// 1.1 从缓存中获取旧的 ClusterPropagatedVersion / PropagatedVersion 对象
 	obj, ok := m.versions[key]
 
 	var oldStatus *fedcorev1a1.PropagatedVersionStatus
 	var clusterVersions []fedcorev1a1.ClusterObjectVersion
 
-	// 从obj上获取旧状态
+	// 1.2 根据传入的 versionMap 构建 PropagatedVersionStatus.ClusterVersions 字段
 	if ok {
 		oldStatus = m.adapter.GetStatus(obj)
-		// 如果当前资源hash出template and override的信息与旧的一样，则保留那些已存在的版本信息
-		// 否则，完全以 versionMap 中的信息为准
+		// 如果 template and override 都没变过，则保留那些已存在的版本信息
 		// The existing versions are still valid if the template and override versions match.
 		if oldStatus.TemplateVersion == templateVersion && oldStatus.OverrideVersion == overrideVersion {
 			clusterVersions = oldStatus.ClusterVersions
 		}
 		clusterVersions = updateClusterVersions(clusterVersions, versionMap, selectedClusters)
 	} else {
-		// 如果没有旧版本，直接使用函数传入的最新 versionMap
+		// 直接使用传入的最新分发资源版本信息
 		clusterVersions = VersionMapToClusterVersions(versionMap)
 	}
 
+	// status 是 ClusterPropagatedVersion/PropagatedVersion.Status 字段
 	status := &fedcorev1a1.PropagatedVersionStatus{
 		TemplateVersion: templateVersion,
 		OverrideVersion: overrideVersion,
@@ -243,22 +250,24 @@ func (m *VersionManager) Update(
 		return nil
 	}
 
-	// 将最新的 传播版本状态 更新到 ClusterPropagatedVersion 或 PropagatedVersion 对象上
+	// 构建或更新 ClusterPropagatedVersion 或 PropagatedVersion 对象
 	if obj == nil {
-		// 创建一个 ClusterPropagatedVersion 或 PropagatedVersion 对象
+		// 构建一个 ClusterPropagatedVersion 或 PropagatedVersion 对象
 		ownerReference := ownerReferenceForFederatedObject(resource)
 		obj = m.adapter.NewVersion(qualifiedName, ownerReference, status)
+		// 将该 obj 缓存到 VersionManager.versions 中
 		m.versions[key] = obj
 	} else {
+		// 设置 ClusterPropagatedVersion/PropagatedVersion.Status 字段
 		m.adapter.SetStatus(obj, status)
 	}
 
 	m.Unlock()
 
+	// 2. 在k8s中更新或创建 obj
 	// Since writeVersion calls the Kube API, the manager should be
 	// unlocked to avoid blocking on calls across the network.
 
-	// 写入到 kube-apiserver 中的动作
 	return m.writeVersion(obj, qualifiedName)
 }
 
@@ -329,6 +338,7 @@ func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName
 	return qualifiedName
 }
 
+// writeVersion 将传入的 obj 在 k8s 中创建或更新obj.Status字段
 // writeVersion serializes the current state of the named propagated
 // version to the API.
 //
@@ -339,9 +349,11 @@ func (m *VersionManager) versionQualifiedName(qualifiedName common.QualifiedName
 // version map.
 func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName common.QualifiedName) error {
 	key := qualifiedName.String()
+	// 获取 obj 的类型 （ClusterPropagatedVersion/PropagatedVersion）
 	adapterType := m.adapter.TypeName()
 	keyedLogger := m.logger.WithValues("version-qualified-name", key)
 
+	// 获取 obj.metadata.ResourceVersion 字段
 	resourceVersion := getResourceVersion(obj)
 	refreshVersion := false
 	// TODO Centralize polling interval and duration
@@ -349,6 +361,7 @@ func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName co
 	err := wait.PollImmediate(100*time.Millisecond, waitDuration, func() (bool, error) {
 		var err error
 
+		// 如果 refreshVersion 变为 true，则从 k8s 中获取最新的 obj，并更新 resourceVersion 字段
 		if refreshVersion {
 			// Version was written to the API by another process after the last manager write.
 			resourceVersion, err = m.getResourceVersionFromAPI(qualifiedName)
@@ -359,6 +372,7 @@ func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName co
 			refreshVersion = false
 		}
 
+		// 如果 resourceVersion 为空，表示obj是新构造出来的，需要在k8s中创建
 		if resourceVersion == "" {
 			// Version resource needs to be created
 
@@ -366,6 +380,7 @@ func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName co
 			setResourceVersion(createdObj, "")
 			keyedLogger.V(1).Info("Creating resourceVersion")
 			createdObj, err = m.adapter.Create(context.TODO(), m.client, createdObj, metav1.CreateOptions{})
+			// 如果k8s中已存在该对象，则设置refreshVersion为true，并进行重试（重试时会从k8s中获取最新的obj）
 			if apierrors.IsAlreadyExists(err) {
 				keyedLogger.V(1).Info("ResourceVersion was created by another process. Will refresh the resourceVersion and attempt to update")
 				refreshVersion = true
@@ -382,10 +397,12 @@ func (m *VersionManager) writeVersion(obj runtimeclient.Object, qualifiedName co
 				return false, nil
 			}
 
+			// k8s 创建好后，获取 resourceVersion 字段
 			// Update the resource version that will be used for update.
 			resourceVersion = getResourceVersion(createdObj)
 		}
 
+		// 更新 k8s 中 obj 的 status 字段
 		// Update the status of an existing object
 
 		updatedObj := obj.DeepCopyObject().(runtimeclient.Object)
@@ -458,9 +475,9 @@ func ownerReferenceForFederatedObject(resource VersionedResource) metav1.OwnerRe
 	}
 }
 
-// 保留此次 待同步集群 中，版本号没有改变的 版本信息
 // 整体以 newVersions 中为主，其中
-// 如果此次 selectedClusters 存在某个 cluster，但是 newVersions 没有相关信息的，则使用该 cluster中的旧版本信息（从oldVersions取）
+// 如果 newVersions 中缺失了部分集群信息（当前需要同步的集群：selectedClusters），则从 oldVersions 中查找并不上
+// 作用：可能部分子集群中的对象并未更新，导致 newVersions 中没有记录，则直接从 oldVersions 取出不上
 func updateClusterVersions(
 	oldVersions []fedcorev1a1.ClusterObjectVersion,
 	newVersions map[string]string,
@@ -468,12 +485,11 @@ func updateClusterVersions(
 ) []fedcorev1a1.ClusterObjectVersion {
 	// Retain versions for selected clusters that were not changed
 	selectedClusterSet := sets.NewString(selectedClusters...)
-	// 如果是 以选中集群，但newVersions中没有相关信息的，则使用 oldVersion 中对应集群的旧版本信息
+	// 遍历 oldVersions，如果没有 newVersions 中没有，且是此次的待同步集群，则使用旧版本的信息给 newVersions不上
 	for _, oldVersion := range oldVersions {
 		if !selectedClusterSet.Has(oldVersion.ClusterName) {
 			continue
 		}
-		// 如果是 newVersions 中确实了某个oldVersion中的集群版本状态，则给他补上
 		if _, ok := newVersions[oldVersion.ClusterName]; !ok {
 			newVersions[oldVersion.ClusterName] = oldVersion.Version
 		}

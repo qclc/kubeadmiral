@@ -38,6 +38,7 @@ const (
 	resourceVersionPrefix = "rv:"
 )
 
+// ObjectVersion 从 clusterObj 中提取出字段（generation/resourceVersion）作为版本信息
 // ObjectVersion retrieves the field type-prefixed value used for
 // determining currency of the given cluster object.
 func ObjectVersion(clusterObj *unstructured.Unstructured) string {

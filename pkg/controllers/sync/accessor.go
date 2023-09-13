@@ -40,6 +40,7 @@ import (
 	"github.com/kubewharf/kubeadmiral/pkg/util/informermanager"
 )
 
+// FederatedResourceAccessor 提供了检索和访问 k8s 中 FederatedObject/ClusterFederatedObject 的操作
 // FederatedResourceAccessor provides a way to retrieve and visit
 // FederatedResource representations of FederatedObject/ClusterFederatedObject
 // in the apiserver.
