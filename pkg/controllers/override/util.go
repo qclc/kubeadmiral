@@ -31,6 +31,12 @@ import (
 
 type overridesMap map[string]fedcorev1a1.OverridePatches
 
+// 返回 fedObj 关联的 op
+// namespaced 资源可以关联一个 op 和 cop，都绑定了，先apply cop，再apply op
+// cluster-scoped 资源只能关联一个 cop（即使标签中声明了一个op，也不会生效，这里会忽略该改标签）
+// 错误类型：
+// - 如果没有找到标签中声明的策略（not found），会返回err，且bool=false，即不希望重新虚招
+// - 其他从k8s get的操作错误，会返回err，且bool=true，即希望重新寻找
 /*
 lookForMatchedPolicies looks for OverridePolicy and/or ClusterOverridePolicy
 that match the obj in the stores.
@@ -52,6 +58,7 @@ func lookForMatchedPolicies(
 
 	labels := obj.GetLabels()
 
+	// 获取 fedobj 标签中声明的 cop
 	clusterPolicyName, clusterPolicyNameExists := labels[ClusterOverridePolicyNameLabel]
 	if clusterPolicyNameExists {
 		if len(clusterPolicyName) == 0 {
@@ -69,6 +76,7 @@ func lookForMatchedPolicies(
 		policies = append(policies, matchedPolicy)
 	}
 
+	// 如果是 namespaced 资源，再获取 fedobj 标签中声明的 op
 	policyName, policyNameExists := labels[OverridePolicyNameLabel]
 	if isNamespaced && policyNameExists {
 		if len(policyName) == 0 {
@@ -88,6 +96,7 @@ func lookForMatchedPolicies(
 	return policies, false, nil
 }
 
+// parseOverrides 解析 policy，并建立以集群名为key的patch map
 func parseOverrides(
 	policy fedcorev1a1.GenericOverridePolicy,
 	clusters []*fedcorev1a1.FederatedCluster,
@@ -98,6 +107,7 @@ func parseOverrides(
 		patches := make(fedcorev1a1.OverridePatches, 0)
 
 		spec := policy.GetSpec()
+		// 按照 policy.spec.OverrideRules 的顺序一条条生成 patch
 		for i, rule := range spec.OverrideRules {
 			matched, err := isClusterMatched(rule.TargetClusters, cluster)
 			if err != nil {
@@ -115,6 +125,7 @@ func parseOverrides(
 			}
 
 			for _, overrider := range rule.Overriders.JsonPatch {
+				// 如果某个 json patch 解析失效，直接返回错误
 				patch, err := policyJsonPatchOverriderToOverridePatch(&overrider)
 				if err != nil {
 					return nil, err
@@ -131,6 +142,7 @@ func parseOverrides(
 	return overridesMap, nil
 }
 
+// 将 dest 和 src 合到一起，实际上就是按照 dest 中的 clustername ，将src对应的 patch append上去
 func mergeOverrides(dest, src overridesMap) overridesMap {
 	if dest == nil {
 		dest = make(overridesMap)
@@ -143,7 +155,9 @@ func mergeOverrides(dest, src overridesMap) overridesMap {
 	return dest
 }
 
+// TODO 匹配细节
 func isClusterMatched(targetClusters *fedcorev1a1.TargetClusters, cluster *fedcorev1a1.FederatedCluster) (bool, error) {
+	// 空的 targetClusters，表示应用到所有 Cluster 上
 	// An empty targetClusters matches all clusters.
 	if targetClusters == nil {
 		return true, nil

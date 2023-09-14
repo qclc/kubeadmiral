@@ -283,6 +283,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		keyedLogger.WithValues("duration", time.Since(startTime), "status", status).V(3).Info("Finished reconciling")
 	}()
 
+	// 1. 获取相关对象
+	// 1.1 获取 fedObj
 	fedObject, err := c.getFederatedObject(qualifiedName)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get federated object")
@@ -293,6 +295,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusAllOK
 	}
 
+	// 1.2 获取 resource 对应的 FTC 内容
 	templateMetadata, err := fedObject.GetSpec().GetTemplateMetadata()
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get template metadata")
@@ -307,6 +310,8 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusAllOK
 	}
 
+	// 判断 fedObject 中的 pendingControllers 是否含有 kubeadmiral.io/overridepolicy-controller
+	// 没有直接返回，不进行reconcile
 	ctx, keyedLogger = logging.InjectLoggerValues(ctx, "ftc", typeConfig.Name)
 	if ok, err := pendingcontrollers.ControllerDependenciesFulfilled(fedObject, PrefixedControllerName); err != nil {
 		keyedLogger.Error(err, "Failed to check controller dependencies")
@@ -315,6 +320,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusAllOK
 	}
 
+	// 1.3 获取 fedObj 关联的 Policy 对象
 	// TODO: don't apply a policy until it has the required finalizer for deletion protection
 	policies, recheckOnErr, err := lookForMatchedPolicies(
 		fedObject,
@@ -337,13 +343,16 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		return worker.StatusAllOK
 	}
 
+	// 1.4 获取 fedObj 上的 placement 对应的 FederatedCluster 对象
 	placedClusters, err := c.getPlacedClusters(fedObject)
 	if err != nil {
 		keyedLogger.Error(err, "Failed to get placed clusters")
 		return worker.StatusError
 	}
 
+	// 2. 构建各个集群对应的 Override
 	var overrides overridesMap
+	// 先 apply cop， 再 op
 	// Apply overrides from each policy in order
 	for _, policy := range policies {
 		newOverrides, err := parseOverrides(policy, placedClusters)
@@ -359,9 +368,12 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 			)
 			return worker.StatusError
 		}
+		// 将 newOverrides 中的内容 append 到 overrides 中对应的 key 中
 		overrides = mergeOverrides(overrides, newOverrides)
 	}
 
+	// 3. 更新 fedObj
+	// 3.1 更新 fedObj.spec.overrides 字段
 	currentOverrides := fedObject.GetSpec().GetControllerOverrides(PrefixedControllerName)
 	needsUpdate := !equality.Semantic.DeepEqual(overrides, currentOverrides)
 
@@ -373,6 +385,7 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		}
 	}
 
+	// 3.2 移除 fedObj.annotations["kubeadmiral.io/pending-controllers"] 字段中与 override 相关的 controller name
 	pendingControllersUpdated, err := pendingcontrollers.UpdatePendingControllers(
 		fedObject,
 		PrefixedControllerName,
@@ -383,8 +396,9 @@ func (c *Controller) reconcile(ctx context.Context, qualifiedName common.Qualifi
 		keyedLogger.Error(err, "Failed to update pending controllers")
 		return worker.StatusError
 	}
-	needsUpdate = needsUpdate || pendingControllersUpdated
 
+	// 3.3 更新到k8s中
+	needsUpdate = needsUpdate || pendingControllersUpdated
 	if needsUpdate {
 		_, err = fedobjectadapters.Update(ctx, c.fedClient.CoreV1alpha1(), fedObject, metav1.UpdateOptions{})
 		if err != nil {
