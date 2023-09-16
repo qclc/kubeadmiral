@@ -190,22 +190,29 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
 		d.recordEvent(clusterName, op, "Creating")
 
+		// 1. 获取、完善（metadata修改、Override等）需要下发到子集群的对象，并进行填充
+
+		// 1.1 获取下发对象 obj，针对不同类型作一些填充
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
 			result = d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
 			return result
 		}
 
+		// 1.2 给 obj 应用 Overrides
 		err = d.fedResource.ApplyOverrides(obj, clusterName)
 		if err != nil {
 			result = d.recordOperationError(ctx, fedcorev1a1.ApplyOverridesFailed, clusterName, op, err)
 			return result
 		}
 
+		// 1.3 设置 obj 的一些 Labels 和 Annotations
 		recordPropagatedLabelsAndAnnotations(obj)
 
 		ctxWithTimeout, cancel := context.WithTimeout(ctx, d.dispatcher.timeout)
 		defer cancel()
+
+		// 2. 执行创建请求，在子集群中创建 obj
 
 		keyedLogger.V(1).Info("Creating target object in cluster")
 		createdObj, createErr := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Create(
@@ -217,7 +224,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			d.recordVersion(clusterName, version)
 			return result
 		}
-
+		// 2.1 部分资源类型（service、namespace）如果已存在，返回的不一定是 IsAlreadyExists 错误，此处进行了详细区分
 		// If the object exists, we may attempt to adopt the resource. We check if the object exists by examining the
 		// returned error.
 		var needsExistenceRecheck bool
@@ -225,15 +232,20 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 		case apierrors.IsAlreadyExists(createErr):
 			needsExistenceRecheck = false
 		case d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.NamespaceKind) && apierrors.IsServerTimeout(createErr):
+			// 对于 namespaces，如果对象存在，则创建是返回 ServerTimeout 错误。我们与后面的GET进行区分
 			// For namespaces, ServerTimeout is returned if object exists. We differentiate with the subsequent GET.
 			needsExistenceRecheck = true
 		case d.fedResource.TargetGVK() == corev1.SchemeGroupVersion.WithKind(common.ServiceKind) && apierrors.IsInvalid(createErr):
+			// 对于 services，如果对象存在，则创建是返回 Invalid 错误。我们与后面的GET进行区分
 			// For services, Invalid is returned if the object exists. We differentiate with the subsequent GET.
 			needsExistenceRecheck = true
 		default:
 			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.CreationFailed, clusterName, op, createErr)
 		}
 
+		// 3. 针对已存在资源，判断是否将该资源变为 接管资源
+
+		// 3.1 获取已存在的资源
 		// Attempt to update the existing resource to ensure that it
 		// is labeled as a managed resource.
 		obj, getErr := client.Resource(d.fedResource.TargetGVR()).Namespace(obj.GetNamespace()).Get(
@@ -249,6 +261,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			return d.recordOperationError(ctxWithTimeout, fedcorev1a1.RetrievalFailed, clusterName, op, wrappedErr)
 		}
 
+		// 3.2 如果 dispatch 设置的 不接管已存在资源，则直接返回，不做更新
 		if d.skipAdoptingResources {
 			result = d.recordOperationError(
 				ctxWithTimeout,
@@ -266,6 +279,7 @@ func (d *managedDispatcherImpl) Create(ctx context.Context, clusterName string) 
 			op,
 			errors.Errorf("An update will be attempted instead of a creation due to an existing resource"),
 		)
+		// 3.3 如果设置的接管冲突资源，则更新该资源，增加接管相关的 Annotation
 		if !managedlabel.HasManagedLabel(obj) {
 			// If the object was not managed by us, mark it as adopted.
 			adoption.AddAdoptedAnnotation(obj)
@@ -298,6 +312,8 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			)
 		}()
 		keyedLogger := klog.FromContext(ctx).WithValues("cluster-name", clusterName)
+		// 1. 判断子集群资源是否已经显示的标注为 不受管控，（kubeadmiral.io/managed=false）
+		// 是的话，直接返回，不做更新
 		if managedlabel.IsExplicitlyUnmanaged(clusterObj) {
 			err := errors.Errorf(
 				"Unable to manage the object which has label %s: %s",
@@ -308,6 +324,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return result
 		}
 
+		// 2. 获取、完善（metadata修改、Override应用等）需要下发到子集群的对象，并进行填充
 		obj, err := d.fedResource.ObjectForCluster(clusterName)
 		if err != nil {
 			result = d.recordOperationError(ctx, fedcorev1a1.ComputeResourceFailed, clusterName, op, err)
@@ -322,6 +339,7 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 
 		recordPropagatedLabelsAndAnnotations(obj)
 
+		// 2.1 针对不同的资源类型，对某些字段保留原内容，某些字段与联邦设置的进行 merge
 		err = RetainOrMergeClusterFields(d.fedResource.TargetGVK(), obj, clusterObj)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain fields")
@@ -329,12 +347,15 @@ func (d *managedDispatcherImpl) Update(ctx context.Context, clusterName string, 
 			return result
 		}
 
+		// 2.2. 如果设置了保留replica，则此处保留原来的 replica 字段值
 		err = retainReplicas(obj, clusterObj, d.fedResource.Object(), d.fedResource.TypeConfig().Spec.PathDefinition.ReplicasSpec)
 		if err != nil {
 			wrappedErr := errors.Wrapf(err, "failed to retain replicas")
 			result = d.recordOperationError(ctx, fedcorev1a1.FieldRetentionFailed, clusterName, op, wrappedErr)
 			return result
 		}
+
+		// 3. 根据版本号对比，判断是否执行实际的更新操作
 
 		// 从 fedResource 上提取出旧的version信息
 		version, err := d.fedResource.VersionForCluster(clusterName)
