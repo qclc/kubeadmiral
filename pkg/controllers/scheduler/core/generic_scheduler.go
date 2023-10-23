@@ -153,6 +153,7 @@ func (g *genericScheduler) Schedule(
 	return result, nil
 }
 
+// 寻找符合条件的clusters
 func (g *genericScheduler) findClustersThatFitWorkload(
 	ctx context.Context,
 	fwk framework.Framework,

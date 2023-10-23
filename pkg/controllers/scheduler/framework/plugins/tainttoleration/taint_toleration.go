@@ -41,6 +41,7 @@ func (pl *TaintToleration) Name() string {
 	return names.TaintToleration
 }
 
+// 进行集群筛选
 func (pl *TaintToleration) Filter(
 	ctx context.Context,
 	su *framework.SchedulingUnit,

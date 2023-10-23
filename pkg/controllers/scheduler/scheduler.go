@@ -388,6 +388,7 @@ func (s *Scheduler) prepareToSchedule(
 	var policy fedcorev1a1.GenericPropagationPolicy
 	var schedulingProfile *fedcorev1a1.SchedulingProfile
 
+	// 从fedobj上获取policy
 	policyKey, hasSchedulingPolicy := GetMatchedPolicyKey(fedObject)
 
 	if hasSchedulingPolicy {

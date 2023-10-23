@@ -71,16 +71,20 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 	dynamicSchedulingEnabled := len(su.Weights) == 0
 
 	var schedulingWeights map[string]int64
+	// TODO 需要考虑
+	// 如果是动态调度，则动态计算各个子集群的权重
 	if dynamicSchedulingEnabled {
 		resourceName := corev1.ResourceCPU
 		if su.ResourceRequest.HasScalarResource(framework.ResourceGPU) {
 			resourceName = framework.ResourceGPU
 		}
+		// 如果待调度集群的Available信息不全，则直接返回错误
 		clusterAvailables := QueryClusterResource(clusters, availableResource)
 		if len(clusters) != len(clusterAvailables) {
 			return clusterReplicasList, framework.NewResult(framework.Error)
 		}
 
+		// 计算 weightLimit
 		weightLimit, err := CalcWeightLimit(clusters, resourceName, supplyLimitProportion)
 		if err != nil {
 			return clusterReplicasList, framework.NewResult(
@@ -89,6 +93,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			)
 		}
 
+		// 计算调度权重
 		schedulingWeights, err = AvailableToPercentage(clusterAvailables, resourceName, weightLimit)
 		if err != nil {
 			return clusterReplicasList, framework.NewResult(
@@ -97,9 +102,11 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			)
 		}
 	} else {
+		// 如果是静态集群权重，则使用指定的子集群权重
 		schedulingWeights = su.Weights
 	}
 
+	// 设置集群的副本调度preference
 	clusterPreferences := map[string]planner.ClusterPreferences{}
 	for _, cluster := range clusters {
 		pref := planner.ClusterPreferences{
@@ -108,6 +115,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 			MaxReplicas: nil,
 		}
 
+		// 此处设置为最大副本数量为当前集群的最大副本数
 		if maxReplicas, exists := su.MaxReplicas[cluster.Name]; exists {
 			pref.MaxReplicas = pointer.Int64Ptr(maxReplicas)
 		}
@@ -115,21 +123,26 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		clusterPreferences[cluster.Name] = pref
 	}
 
+	// 设定期望的 副本数
 	totalReplicas := int64(0)
 	if su.DesiredReplicas != nil {
 		totalReplicas = *su.DesiredReplicas
 	}
 
+	// 设置当前的replicas
 	currentReplicas := map[string]int64{}
 	for cluster, replicas := range su.CurrentClusters {
 		if replicas != nil {
 			currentReplicas[cluster] = *replicas
 			continue
 		}
+		// TODO ？？
 		currentReplicas[cluster] = totalReplicas
 	}
 
+	// 描述各个子集群可以容纳的估计最大副本数。
 	estimatedCapacity := map[string]int64{}
+	// 是否保持不调度副本
 	keepUnschedulableReplicas := false
 	if autoMigration := su.AutoMigration; autoMigration != nil {
 		keepUnschedulableReplicas = autoMigration.KeepUnschedulableReplicas
@@ -163,6 +176,7 @@ func (pl *ClusterCapacityWeight) ReplicaScheduling(
 		su.Key(), spew.Sprint(clusterPreferences), estimatedCapacity, currentReplicas, scheduleResult,
 	)
 
+	// 将调度结果进行整理后返回
 	result := make(map[string]int64)
 	for clusterName, replicas := range scheduleResult {
 		result[clusterName] = replicas

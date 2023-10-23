@@ -105,6 +105,9 @@ func Plan(
 		return nil, nil, err
 	}
 
+	// 如果 keepUnschedulableReplicas 为 false，并且任何集群的容量有限，则生成的计划可能会违反 preferences。
+	// 如果 avoidDisruption 也为 false，则后续重新调度会将副本分布恢复到我们移动不可调度副本之前的状态。
+
 	// If keepUnschedulableReplicas is false,
 	// the resultant plan will likely violate the preferences
 	// if any cluster has limited capacity.
@@ -124,11 +127,13 @@ func Plan(
 		keepUnschedulableReplicas,
 	)
 
+	// 如果可以进行副本迁移，就直接返回计算后的结果
 	// If we don't want to avoid migration, just return the plan computed from preferences
 	if !avoidDisruption {
 		return desiredPlan, desiredOverflow, nil
 	}
 
+	// 如果需要避免副本迁移，则需要进行有选择的扩容或缩容
 	// Try to avoid instance migration between clusters
 
 	var currentTotalOkReplicas int64
@@ -214,10 +219,12 @@ func getDesiredPlan(
 	totalReplicas int64,
 	keepUnschedulableReplicas bool,
 ) (map[string]int64, map[string]int64) {
+	// remainingReplicas 记录剩下待分配的副本
 	remainingReplicas := totalReplicas
 	plan := make(map[string]int64, len(preferences))
 	overflow := make(map[string]int64, len(preferences))
 
+	// 给每个子集群分配preferences中设定的最小副本数
 	// Assign each cluster the minimum number of replicas it requested.
 	for _, preference := range preferences {
 		min := minInt64(preference.MinReplicas, remainingReplicas)

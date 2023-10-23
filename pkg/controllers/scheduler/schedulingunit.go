@@ -122,7 +122,9 @@ func schedulingUnitForFedObject(
 		schedulingUnit.MinReplicas = minReplicasOverride
 	}
 
+	// 从 policy上获取最大Replicas
 	schedulingUnit.MaxReplicas = getMaxReplicasFromPolicy(policy)
+	// 从 fedObject Annotation kubeadmiral.io/placements 上获取对应的 maxReplicas
 	maxReplicasOverride, exists := getMaxReplicasFromObject(fedObject)
 	if exists {
 		schedulingUnit.MaxReplicas = maxReplicasOverride
