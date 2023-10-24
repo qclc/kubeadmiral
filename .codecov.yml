@@ -8,11 +8,10 @@ coverage:
     patch:
       default:
         target: 60%
-        informational: false
         if_ci_failed: error
 
 # https://docs.codecov.com/docs/pull-request-comments#disable-comment
-comment: true
+#comment: true
 
 # https://docs.codecov.com/docs/ignoring-paths
 ignore:
