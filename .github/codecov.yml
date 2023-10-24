@@ -14,13 +14,13 @@ coverage:
 # https://docs.codecov.com/docs/pull-request-comments#disable-comment
 comment: false
 
-## https://docs.codecov.com/docs/ignoring-paths
-#ignore:
-#  - "../config"
-#  - "../docs"
-#  - "../examples"
-#  - "../hack"
-#  - "../pkg/apis"
-#  - "../test"
-#  - "../.github"
-#  - "*_test.go"
+# https://docs.codecov.com/docs/ignoring-paths
+ignore:
+  - "../config"
+  - "../docs"
+  - "../examples"
+  - "../hack"
+  - "../pkg/apis"
+  - "../test"
+  - "../.github"
+  - "*_test.go"
