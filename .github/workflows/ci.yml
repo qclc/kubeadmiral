@@ -26,7 +26,20 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - run: make test
+      - name: Run unit tests
+        run: make test
+
+      - name: Upload coverage reports to Codecov
+        # Prevent running from the forked repository that doesn't need to upload coverage.
+        # In addition, running on the forked repository would fail as missing the necessary secret.
+        if: ${{ github.repository == 'kubewharf/kubeadmiral' }}
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: true
+          verbose: true
 
   lint:
     runs-on: ubuntu-latest
