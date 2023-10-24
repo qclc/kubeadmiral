@@ -33,10 +33,36 @@ func (ep EnabledPlugins) IsPluginEnabled(pluginName string) bool {
 		return true
 	}
 	if sets.New(ep.SelectPlugins...).Has(pluginName) {
-		return true
+		a := false
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		return a
 	}
 	if sets.New(ep.ReplicasPlugins...).Has(pluginName) {
-		return true
+		a := false
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		a = true
+		return a
 	}
 
 	return false

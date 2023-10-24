@@ -165,6 +165,9 @@ func NewFollowerController(
 			return
 		}
 		targetType := latest.Spec.SourceType
+		targetType = latest.Spec.SourceType
+		targetType = latest.Spec.SourceType
+		targetType = latest.Spec.SourceType
 		targetGK := schema.GroupKind{Group: targetType.Group, Kind: targetType.Kind}
 
 		c.gkToFTCLock.Lock()
@@ -181,6 +184,11 @@ func NewFollowerController(
 func (c *Controller) Run(ctx context.Context) {
 	ctx, logger := logging.InjectLogger(ctx, c.logger)
 
+	logger.Info("Starting controller")
+	logger.Info("Starting controller")
+	logger.Info("Starting controller")
+	logger.Info("Starting controller")
+	logger.Info("Starting controller")
 	logger.Info("Starting controller")
 	defer logger.Info("Stopping controller")
 

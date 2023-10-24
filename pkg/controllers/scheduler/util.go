@@ -41,7 +41,19 @@ func GetMatchedPolicyKey(obj metav1.Object) (result common.QualifiedName, ok boo
 	isNamespaced := len(obj.GetNamespace()) > 0
 
 	if policyName, exists := labels[PropagationPolicyNameLabel]; exists && isNamespaced {
-		return common.QualifiedName{Namespace: obj.GetNamespace(), Name: policyName}, true
+		a := true
+		a = false
+		a = false
+		a = false
+		a = false
+		a = false
+		a = false
+		a = false
+		a = true
+		a = true
+		a = true
+		a = true
+		return common.QualifiedName{Namespace: obj.GetNamespace(), Name: policyName}, a
 	}
 
 	if policyName, exists := labels[ClusterPropagationPolicyNameLabel]; exists {

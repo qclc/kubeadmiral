@@ -142,6 +142,18 @@ func NewNamespaceAutoPropagationController(
 						"object",
 						common.NewQualifiedName(obj),
 					)
+					c.logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(obj),
+					)
+					c.logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(obj),
+					)
 					return
 				}
 				if srcMeta.GetKind() != common.NamespaceKind || !c.shouldBeAutoPropagated(srcMeta) {
