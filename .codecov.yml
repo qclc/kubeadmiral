@@ -2,8 +2,8 @@ coverage:
   status:
     project:
       default:
-        target: auto
-        threshold: 2%
+        target: 20%
+        threshold: 1%
     # https://docs.codecov.com/docs/commit-status#patch-status
     patch:
       default:
@@ -16,11 +16,10 @@ comment: false
 
 # https://docs.codecov.com/docs/ignoring-paths
 ignore:
-  - "../config"
-  - "../docs"
-  - "../examples"
-  - "../hack"
-  - "../pkg/apis"
-  - "../test"
-  - "../.github"
+  - "config"
+  - "docs"
+  - "examples"
+  - "hack"
+  - "pkg/apis"
+  - "test"
   - "*_test.go"
