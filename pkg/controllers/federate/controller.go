@@ -164,6 +164,12 @@ func NewFederateController(
 						"object",
 						common.NewQualifiedName(fedObj),
 					)
+					c.logger.Error(
+						err,
+						"Failed to get source object's metadata from FederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
 					return
 				}
 
