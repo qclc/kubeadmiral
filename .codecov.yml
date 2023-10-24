@@ -2,17 +2,17 @@ coverage:
   status:
     project:
       default:
-        target: 60%
+        target: auto
         threshold: 1%
     # https://docs.codecov.com/docs/commit-status#patch-status
     patch:
       default:
         target: 60%
-        informational: true
+        informational: false
         if_ci_failed: error
 
 # https://docs.codecov.com/docs/pull-request-comments#disable-comment
-comment: false
+comment: true
 
 # https://docs.codecov.com/docs/ignoring-paths
 ignore:
