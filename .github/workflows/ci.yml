@@ -32,7 +32,7 @@ jobs:
       - name: Upload coverage reports to Codecov
         # Prevent running from the forked repository that doesn't need to upload coverage.
         # In addition, running on the forked repository would fail as missing the necessary secret.
-        if: ${{ github.repository == 'TaoChen-seal/kubeadmiral' }}
+        if: ${{ github.repository == 'qclc/kubeadmiral' }}
         uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
