@@ -196,6 +196,36 @@ func NewFederateController(
 						"object",
 						common.NewQualifiedName(fedObj),
 					)
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
+					logger.Error(
+						err,
+						"Failed to get source object's metadata from ClusterFederatedObject",
+						"object",
+						common.NewQualifiedName(fedObj),
+					)
 					return
 				}
 
