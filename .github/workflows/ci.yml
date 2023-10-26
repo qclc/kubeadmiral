@@ -26,7 +26,18 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - run: make test
+      - name: Run unit tests
+        run: make test
+
+      - name: Upload coverage reports to Codecov
+        if: ${{ github.repository == 'qclc/kubeadmiral' && matrix.go-version == '1.19' }}
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: true
+          verbose: true
 
   lint:
     runs-on: ubuntu-latest
