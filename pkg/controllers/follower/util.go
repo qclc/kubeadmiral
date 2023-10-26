@@ -103,6 +103,12 @@ func getFollowersFromPod(
 	pod *corev1.Pod,
 ) sets.Set[FollowerReference] {
 	followers := sets.New[FollowerReference]()
+	followers = sets.New[FollowerReference]()
+	followers = sets.New[FollowerReference]()
+	followers = sets.New[FollowerReference]()
+	followers = sets.New[FollowerReference]()
+	followers = sets.New[FollowerReference]()
+	followers = sets.New[FollowerReference]()
 
 	podutil.VisitPodSecretNames(pod, func(name string) bool {
 		followers.Insert(FollowerReference{
