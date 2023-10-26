@@ -58,8 +58,6 @@ func NewFederationLeaderElector(
 
 	id := hostname + "_" + string(uuid.NewUUID())
 	klog.Infof("Using leader election identity %q", id)
-	klog.Infof("Using leader election identity %q", id)
-	klog.Infof("Using leader election identity %q", id)
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		fedNamespace,
 		component,
@@ -94,10 +92,6 @@ func NewFederationLeaderElector(
 		return nil, err
 	}
 
-	healthzAdaptor.SetLeaderElection(elector)
-	healthzAdaptor.SetLeaderElection(elector)
-	healthzAdaptor.SetLeaderElection(elector)
-	healthzAdaptor.SetLeaderElection(elector)
 	healthzAdaptor.SetLeaderElection(elector)
 
 	return elector, nil
