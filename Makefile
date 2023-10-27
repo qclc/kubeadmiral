@@ -151,7 +151,6 @@ test:
 # exclude generated files from coverage calculation
 	sed '/generated/d' coverage.out.tmp > coverage.out
 	rm coverage.out.tmp
-	go tool cover -func coverage.out | tail -n 1 | awk '{ print "Total coverage: " $$3 }'
 
 # Run e2e tests
 .PHONY: e2e
