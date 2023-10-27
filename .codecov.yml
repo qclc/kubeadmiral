@@ -20,5 +20,6 @@ ignore:
   - "examples"
   - "hack"
   - "pkg/apis"
+  - "pkg/client"
   - "test"
   - "*_test.go"
