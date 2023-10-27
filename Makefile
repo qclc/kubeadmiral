@@ -147,7 +147,7 @@ lint-new: lint
 # Run tests
 .PHONY: test
 test:
-	go test -race -coverpkg=./pkg/... -coverprofile coverage.out.tmp ./pkg/...
+	go test -race -coverprofile coverage.out.tmp ./pkg/...
 # exclude generated files from coverage calculation
 	sed '/generated/d' coverage.out.tmp > coverage.out
 	rm coverage.out.tmp
